@@ -1,0 +1,1330 @@
+--[[
+    @XevrynXen  •  ARSENAL
+    UI: @XevrynXen v2 shell
+    Backend: Aimbot, Silent Aim, ESP, Character, Weapon Mods
+    Update: Only the main window is translucent
+]]
+
+local Players           = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace         = game:GetService("Workspace")
+local RunService        = game:GetService("RunService")
+local TweenService      = game:GetService("TweenService")
+local UIS               = game:GetService("UserInputService")
+local Lighting          = game:GetService("Lighting")
+local SoundService      = game:GetService("SoundService")
+local Debris            = game:GetService("Debris")
+local CoreGui           = game:GetService("CoreGui")
+
+local LP = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+local playerGui = LP:WaitForChild("PlayerGui")
+
+if playerGui:FindFirstChild("KB_XevrynXen") then
+    playerGui.KB_XevrynXen:Destroy()
+end
+
+local LOGO = "rbxassetid://107391174248131"
+
+----------------------------------------------------------------------
+-- THEME
+----------------------------------------------------------------------
+local WHITE = Color3.new(1,1,1)
+local C = {
+    bg=Color3.fromRGB(11,12,16), panel=Color3.fromRGB(18,19,24),
+    panel2=Color3.fromRGB(24,25,32), hover=Color3.fromRGB(32,33,42),
+    line=Color3.fromRGB(46,48,60), accent=Color3.fromRGB(255,72,92),
+    accentDark=Color3.fromRGB(140,28,46), red=Color3.fromRGB(235,28,48),
+    purple=Color3.fromRGB(165,92,255), blue=Color3.fromRGB(72,145,255),
+    green=Color3.fromRGB(72,220,145), text=Color3.fromRGB(245,245,248),
+    muted=Color3.fromRGB(155,158,168),
+}
+
+----------------------------------------------------------------------
+-- SFX
+----------------------------------------------------------------------
+local PING="rbxasset://sounds/electronicpingshort.wav"
+local CLICK="rbxasset://sounds/clickfast.wav"
+local WHOOSH="rbxasset://sounds/swordslash.wav"
+local BOOM="rbxasset://sounds/impact_explosion_03.mp3"
+local SFX={
+    select={{id=CLICK,speed=1.1,vol=0.7}},
+    hover={{id=CLICK,speed=1.8,vol=0.1}},
+    on={{id=PING,speed=1.2,vol=0.55},{id=PING,speed=1.7,vol=0.55,delay=0.09}},
+    off={{id=PING,speed=0.8,vol=0.55},{id=PING,speed=0.55,vol=0.55,delay=0.09}},
+    open={{id=WHOOSH,speed=1.3,vol=0.5},{id=PING,speed=1.5,vol=0.4,delay=0.12}},
+    close={{id=WHOOSH,speed=0.85,vol=0.4}},
+    whoosh={{id=WHOOSH,speed=1.0,vol=0.7}},
+    boom={{id=BOOM,speed=0.9,vol=0.8}},
+}
+local function sfx(name)
+    local list=SFX[name]; if not list then return end
+    for _,s in ipairs(list) do
+        task.delay(s.delay or 0, function()
+            local snd=Instance.new("Sound")
+            snd.SoundId=s.id; snd.Volume=s.vol or 0.5
+            snd.PlaybackSpeed=s.speed or 1
+            snd.Parent=SoundService; snd:Play()
+            Debris:AddItem(snd,3)
+        end)
+    end
+end
+
+----------------------------------------------------------------------
+-- HELPERS
+----------------------------------------------------------------------
+local function new(class, props, parent)
+    local o=Instance.new(class)
+    for k,v in pairs(props) do o[k]=v end
+    o.Parent=parent; return o
+end
+local function tween(o,t,props,style,dir)
+    local tw=TweenService:Create(o,TweenInfo.new(t,style or Enum.EasingStyle.Quint,dir or Enum.EasingDirection.Out),props)
+    tw:Play(); return tw
+end
+local function corner(o,r) return new("UICorner",{CornerRadius=UDim.new(0,r)},o) end
+local function stroke(o,color,th,tr)
+    return new("UIStroke",{Color=color,Thickness=th or 1,Transparency=tr or 0,
+        ApplyStrokeMode=Enum.ApplyStrokeMode.Border},o)
+end
+local function label(parent,props)
+    local l=Instance.new("TextLabel")
+    l.BackgroundTransparency=1; l.BorderSizePixel=0
+    l.Font=Enum.Font.GothamMedium; l.TextColor3=C.text; l.TextSize=13
+    for k,v in pairs(props) do l[k]=v end
+    l.Parent=parent; return l
+end
+local function accentGradient(o)
+    return new("UIGradient",{Color=ColorSequence.new({
+        ColorSequenceKeypoint.new(0,C.accent),
+        ColorSequenceKeypoint.new(0.5,C.purple),
+        ColorSequenceKeypoint.new(1,C.blue),
+    })},o)
+end
+
+local spinners={}
+local function spin(g,speed) table.insert(spinners,{g=g,s=speed or 60}) end
+RunService.RenderStepped:Connect(function(dt)
+    for i=#spinners,1,-1 do
+        local e=spinners[i]
+        if e.g.Parent then e.g.Rotation=(e.g.Rotation+e.s*dt)%360
+        else table.remove(spinners,i) end
+    end
+end)
+
+local function shineText(lbl,period)
+    period=period or 2.0
+    lbl.TextColor3=WHITE
+    local g=new("UIGradient",{Color=ColorSequence.new({
+        ColorSequenceKeypoint.new(0,C.red),
+        ColorSequenceKeypoint.new(0.4,C.red),
+        ColorSequenceKeypoint.new(0.5,WHITE),
+        ColorSequenceKeypoint.new(0.6,C.red),
+        ColorSequenceKeypoint.new(1,C.red),
+    }),Offset=Vector2.new(1,0)},lbl)
+    task.spawn(function()
+        while g.Parent do
+            g.Offset=Vector2.new(1,0)
+            tween(g,period*0.65,{Offset=Vector2.new(-1,0)},Enum.EasingStyle.Sine,Enum.EasingDirection.InOut)
+            task.wait(period)
+        end
+    end)
+    return g
+end
+
+local function makeShine(parent,w,h,z)
+    local s=new("Frame",{
+        AnchorPoint=Vector2.new(0.5,0.5),
+        Position=UDim2.new(1.3,0,0.5,0),
+        Size=UDim2.new(0,w,0,h),
+        BackgroundColor3=WHITE, BorderSizePixel=0,
+        Rotation=18, ZIndex=z or 3,
+    },parent)
+    new("UIGradient",{Transparency=NumberSequence.new({
+        NumberSequenceKeypoint.new(0,1),
+        NumberSequenceKeypoint.new(0.5,0.5),
+        NumberSequenceKeypoint.new(1,1),
+    })},s)
+    return s
+end
+
+local function makeLogo(parent,radius,props)
+    local box=new("CanvasGroup",{BackgroundColor3=C.panel,BorderSizePixel=0},parent)
+    for k,v in pairs(props or {}) do box[k]=v end
+    corner(box,radius)
+    new("ImageLabel",{
+        Size=UDim2.new(1,0,1,0), BackgroundTransparency=1,
+        Image=LOGO, ScaleType=Enum.ScaleType.Crop, BorderSizePixel=0,
+    },box)
+    return box
+end
+
+----------------------------------------------------------------------
+-- STATE
+----------------------------------------------------------------------
+local Flags = {}
+local Changed = Instance.new("BindableEvent")
+
+local gui = new("ScreenGui", {
+    Name="KB_XevrynXen", ResetOnSpawn=false,
+    IgnoreGuiInset=true, DisplayOrder=50,
+    ZIndexBehavior=Enum.ZIndexBehavior.Sibling,
+}, playerGui)
+
+local function baseScale()
+    local v=Workspace.CurrentCamera.ViewportSize
+    return math.clamp(math.min(v.X/800,v.Y/520),0.55,1)
+end
+
+----------------------------------------------------------------------
+-- NOTIFICATIONS
+----------------------------------------------------------------------
+local notifHolder=new("Frame",{
+    AnchorPoint=Vector2.new(1,1),
+    Position=UDim2.new(1,-16,1,-16),
+    Size=UDim2.new(0,260,0,320),
+    BackgroundTransparency=1,
+},gui)
+new("UIListLayout",{
+    VerticalAlignment=Enum.VerticalAlignment.Bottom,
+    SortOrder=Enum.SortOrder.LayoutOrder,
+    Padding=UDim.new(0,6),
+},notifHolder)
+
+local function notify(text,color)
+    color=color or C.accent
+    local wrap=new("Frame",{Size=UDim2.new(1,0,0,40),BackgroundTransparency=1},notifHolder)
+    local card=new("Frame",{
+        Size=UDim2.new(1,0,1,0),
+        Position=UDim2.new(0,290,0,0),
+        BackgroundColor3=C.panel, BorderSizePixel=0,
+    },wrap)
+    corner(card,8); stroke(card,color,1,0.5)
+    new("Frame",{
+        Position=UDim2.new(0,7,0,7),
+        Size=UDim2.new(0,3,1,-14),
+        BackgroundColor3=color, BorderSizePixel=0,
+    },card)
+    label(card,{
+        Text=text, Font=Enum.Font.GothamBold,
+        Position=UDim2.new(0,20,0,0), Size=UDim2.new(1,-28,1,0),
+        TextXAlignment=Enum.TextXAlignment.Left,
+    })
+    local prog=new("Frame",{
+        AnchorPoint=Vector2.new(0,1), Position=UDim2.new(0,0,1,0),
+        Size=UDim2.new(1,0,0,2), BackgroundColor3=color, BorderSizePixel=0,
+    },card)
+    tween(card,0.45,{Position=UDim2.new(0,0,0,0)},Enum.EasingStyle.Back)
+    tween(prog,2.2,{Size=UDim2.new(0,0,0,2)},Enum.EasingStyle.Linear)
+    task.delay(2.2,function()
+        tween(card,0.3,{Position=UDim2.new(0,290,0,0)},Enum.EasingStyle.Quint,Enum.EasingDirection.In)
+        task.delay(0.35,function() wrap:Destroy() end)
+    end)
+end
+_G.Arsenal_Notify = notify
+
+local function fire(id,value,silent)
+    Flags[id]=value
+    if not silent then Changed:Fire(id,value) end
+end
+
+----------------------------------------------------------------------
+-- CONFIG
+----------------------------------------------------------------------
+local function T(id,title,def) return {type="toggle",id=id,title=title,default=def or false} end
+local function S(id,title,min,max,def,dec)
+    return {type="slider",id=id,title=title,min=min,max=max,default=def,decimals=dec or 0}
+end
+local function D(id,title,options,def)
+    return {type="dropdown",id=id,title=title,options=options,default=def or options[1]}
+end
+local function G(name,side,controls) return {name=name,side=side,controls=controls} end
+
+local CONFIG = {
+    {
+        name="Combat", icon="⚔",
+        groups={
+            G("Aimbot","left",{
+                T("AimEnable","Blatant Aimbot"),
+                T("AimTeamCheck","Team Check"),
+                D("AimPart","Aim Part",{"Head","HumanoidRootPart","UpperTorso","Torso"},"Head"),
+                S("FOV","FOV Size",10,500,55),
+                S("Sensitivity","Sensitivity (x100)",1,50,3),
+                T("DrawFOV","Draw FOV Circle",true),
+            }),
+            G("Silent Aim","right",{
+                T("SilentAim","OP Silent Aim"),
+            }),
+        },
+    },
+    {
+        name="ESP", icon="👁",
+        groups={
+            G("Player ESP","left",{
+                T("ESPEnable","Player ESP"),
+                T("ESPBox","Box"),
+                T("ESPName","Name"),
+            }),
+            G("Team","right",{
+                T("ESPTeamCheck","Team Check"),
+            }),
+        },
+    },
+    {
+        name="Character", icon="⚙",
+        groups={
+            G("Movement","left",{
+                T("InfJump","Infinite Jump"),
+                T("SpeedHack","Speed Hack"),
+                S("SpeedValue","Speed",16,200,100),
+                T("Fly","Fly"),
+                S("FlySpeed","Fly Speed",20,200,60),
+            }),
+        },
+    },
+    {
+        name="Weapon", icon="♾",
+        groups={
+            G("Mods","left",{
+                T("RecoilMod","Recoil Mod"),
+                T("FireRateMod","FireRate Mod"),
+                T("AmmoMod","Ammo Mod"),
+            }),
+        },
+    },
+}
+
+----------------------------------------------------------------------
+-- CONTROL BUILDERS
+----------------------------------------------------------------------
+local function ripple(row,relX)
+    local r=new("Frame",{
+        AnchorPoint=Vector2.new(0.5,0.5),
+        Position=UDim2.new(relX,0,0.5,0),
+        Size=UDim2.new(0,0,0,0),
+        BackgroundColor3=C.accent, BackgroundTransparency=0.55,
+        BorderSizePixel=0, ZIndex=0,
+    },row)
+    corner(r,200)
+    tween(r,0.55,{Size=UDim2.new(0,170,0,170), BackgroundTransparency=1})
+    task.delay(0.6,function() r:Destroy() end)
+end
+
+local function makeToggle(parent,ctrl,order)
+    local row=new("TextButton",{
+        Size=UDim2.new(1,0,0,34),
+        BackgroundColor3=C.hover, BackgroundTransparency=1,
+        AutoButtonColor=false, Text="", ClipsDescendants=true,
+        LayoutOrder=order,
+    },parent)
+    corner(row,8)
+    local hbar=new("Frame",{
+        AnchorPoint=Vector2.new(0,0.5), Position=UDim2.new(0,0,0.5,0),
+        Size=UDim2.new(0,3,0,0), BackgroundColor3=C.accent, BorderSizePixel=0,
+    },row)
+    local name=label(row,{
+        Text=ctrl.title, Position=UDim2.new(0,10,0,0),
+        Size=UDim2.new(1,-60,1,0),
+        TextXAlignment=Enum.TextXAlignment.Left,
+    })
+    local sw=new("Frame",{
+        AnchorPoint=Vector2.new(1,0.5), Position=UDim2.new(1,-8,0.5,0),
+        Size=UDim2.new(0,38,0,20), BackgroundColor3=C.line, BorderSizePixel=0,
+    },row)
+    corner(sw,10)
+    local swStroke=stroke(sw,C.accent,2,1)
+    local knob=new("Frame",{
+        AnchorPoint=Vector2.new(0,0.5), Position=UDim2.new(0,3,0.5,0),
+        Size=UDim2.new(0,14,0,14), BackgroundColor3=C.text, BorderSizePixel=0,
+    },sw)
+    corner(knob,7)
+    local function set(v,silent)
+        tween(sw,0.25,{BackgroundColor3=v and C.accent or C.line})
+        tween(swStroke,0.25,{Transparency=v and 0.45 or 1})
+        tween(knob,0.32,{Position=UDim2.new(0,v and 21 or 3,0.5,0)},Enum.EasingStyle.Back)
+        tween(name,0.2,{TextColor3=v and C.text or C.muted})
+        fire(ctrl.id,v,silent)
+        if not silent then sfx(v and "on" or "off") end
+    end
+    row.MouseEnter:Connect(function()
+        tween(row,0.15,{BackgroundTransparency=0.45})
+        tween(hbar,0.2,{Size=UDim2.new(0,3,0,16)})
+        sfx("hover")
+    end)
+    row.MouseLeave:Connect(function()
+        tween(row,0.15,{BackgroundTransparency=1})
+        tween(hbar,0.2,{Size=UDim2.new(0,3,0,0)})
+    end)
+    row.Activated:Connect(function(input)
+        local relX=0.85
+        if input and input.Position then
+            relX=math.clamp((input.Position.X-row.AbsolutePosition.X)/row.AbsoluteSize.X,0,1)
+        end
+        ripple(row,relX)
+        set(not Flags[ctrl.id])
+    end)
+    set(ctrl.default,true)
+    name.TextColor3=ctrl.default and C.text or C.muted
+end
+
+local function makeSlider(parent,ctrl,order)
+    local row=new("Frame",{Size=UDim2.new(1,0,0,48),BackgroundTransparency=1,LayoutOrder=order},parent)
+    label(row,{Text=ctrl.title,Position=UDim2.new(0,10,0,4),Size=UDim2.new(1,-70,0,18),
+        TextXAlignment=Enum.TextXAlignment.Left})
+    local valueLabel=label(row,{
+        Text="", Font=Enum.Font.GothamBold, TextColor3=C.accent,
+        AnchorPoint=Vector2.new(1,0), Position=UDim2.new(1,-8,0,4),
+        Size=UDim2.new(0,60,0,18), TextXAlignment=Enum.TextXAlignment.Right,
+    })
+    local hit=new("TextButton",{
+        Position=UDim2.new(0,10,0,26), Size=UDim2.new(1,-20,0,18),
+        BackgroundTransparency=1, Text="", AutoButtonColor=false,
+    },row)
+    local bar=new("Frame",{
+        AnchorPoint=Vector2.new(0,0.5), Position=UDim2.new(0,0,0.5,0),
+        Size=UDim2.new(1,0,0,6), BackgroundColor3=C.line, BorderSizePixel=0,
+    },hit)
+    corner(bar,3)
+    local fill=new("Frame",{Size=UDim2.new(0,0,1,0),BackgroundColor3=WHITE,BorderSizePixel=0},bar)
+    corner(fill,3); accentGradient(fill)
+    local knob=new("Frame",{
+        AnchorPoint=Vector2.new(0.5,0.5), Size=UDim2.new(0,14,0,14),
+        BackgroundColor3=C.text, BorderSizePixel=0,
+    },bar)
+    corner(knob,7)
+    local knobStroke=stroke(knob,C.accent,2,1)
+    local min,max=ctrl.min,ctrl.max
+    local mult=10^ctrl.decimals
+    local function setValue(v,silent)
+        v=math.floor(math.clamp(v,min,max)*mult+0.5)/mult
+        local a=(v-min)/(max-min)
+        tween(fill,0.08,{Size=UDim2.new(a,0,1,0)},Enum.EasingStyle.Linear)
+        tween(knob,0.08,{Position=UDim2.new(a,0,0.5,0)},Enum.EasingStyle.Linear)
+        valueLabel.Text=tostring(v)
+        fire(ctrl.id,v,silent)
+    end
+    local function fromX(x)
+        local a=math.clamp((x-bar.AbsolutePosition.X)/bar.AbsoluteSize.X,0,1)
+        setValue(min+(max-min)*a)
+    end
+    local dragging=false
+    hit.InputBegan:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
+            dragging=true
+            sfx("select")
+            tween(knob,0.18,{Size=UDim2.new(0,19,0,19)},Enum.EasingStyle.Back)
+            tween(knobStroke,0.18,{Transparency=0.3})
+            fromX(i.Position.X)
+            i.Changed:Connect(function()
+                if i.UserInputState==Enum.UserInputState.End then
+                    dragging=false
+                    tween(knob,0.18,{Size=UDim2.new(0,14,0,14)})
+                    tween(knobStroke,0.18,{Transparency=1})
+                end
+            end)
+        end
+    end)
+    UIS.InputChanged:Connect(function(i)
+        if dragging and (i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch) then
+            fromX(i.Position.X)
+        end
+    end)
+    setValue(ctrl.default,true)
+end
+
+local function makeDropdown(parent,ctrl,order)
+    local closedH=34
+    local openH=closedH+6+#ctrl.options*26
+    local box=new("Frame",{
+        Size=UDim2.new(1,0,0,closedH),
+        BackgroundColor3=C.hover, BackgroundTransparency=0.5,
+        BorderSizePixel=0, ClipsDescendants=true, LayoutOrder=order,
+    },parent)
+    corner(box,8)
+    local head=new("TextButton",{Size=UDim2.new(1,0,0,closedH),BackgroundTransparency=1,Text="",AutoButtonColor=false},box)
+    label(head,{Text=ctrl.title,Position=UDim2.new(0,10,0,0),Size=UDim2.new(0.5,-8,1,0),
+        TextXAlignment=Enum.TextXAlignment.Left})
+    local current=label(head,{
+        Text="", Font=Enum.Font.GothamBold, TextColor3=C.accent,
+        Position=UDim2.new(0.5,0,0,0), Size=UDim2.new(0.5,-26,1,0),
+        TextXAlignment=Enum.TextXAlignment.Right,
+    })
+    local arrow=label(head,{Text="▾",TextColor3=C.muted,AnchorPoint=Vector2.new(1,0),
+        Position=UDim2.new(1,-8,0,0),Size=UDim2.new(0,14,1,0)})
+    local open=false
+    local buttons={}
+    local function choose(v,silent)
+        current.Text=v
+        for opt,b in pairs(buttons) do
+            tween(b,0.15,{TextColor3=opt==v and C.accent or C.muted})
+        end
+        fire(ctrl.id,v,silent)
+    end
+    for i,opt in ipairs(ctrl.options) do
+        local b=new("TextButton",{
+            Position=UDim2.new(0,6,0,closedH+4+(i-1)*26),
+            Size=UDim2.new(1,-12,0,24),
+            BackgroundColor3=C.panel, AutoButtonColor=false,
+            Text=opt, Font=Enum.Font.GothamMedium, TextSize=12,
+            TextColor3=C.muted, BorderSizePixel=0,
+        },box)
+        corner(b,6)
+        buttons[opt]=b
+        b.Activated:Connect(function()
+            sfx("select"); choose(opt); open=false
+            tween(box,0.3,{Size=UDim2.new(1,0,0,closedH)})
+            tween(arrow,0.3,{Rotation=0})
+        end)
+    end
+    head.Activated:Connect(function()
+        sfx("select"); open=not open
+        tween(box,0.38,{Size=UDim2.new(1,0,0,open and openH or closedH)},Enum.EasingStyle.Quint)
+        tween(arrow,0.3,{Rotation=open and 180 or 0})
+    end)
+    choose(ctrl.default,true)
+end
+
+local builders={toggle=makeToggle,slider=makeSlider,dropdown=makeDropdown}
+
+----------------------------------------------------------------------
+-- DRAGGABLE
+----------------------------------------------------------------------
+local function makeDraggable(handle,target,opts)
+    opts=opts or {}
+    local drag={active=false}
+    local goal,cur=Vector2.zero,Vector2.zero
+    local startPos,startAbs
+    handle.InputBegan:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
+            drag.active=true; drag.input=i; drag.start=i.Position; drag.moved=0
+            startPos=target.Position; startAbs=target.AbsolutePosition
+            goal,cur=Vector2.zero,Vector2.zero
+            i.Changed:Connect(function()
+                if i.UserInputState==Enum.UserInputState.End then
+                    drag.active=false
+                    if opts.onTap and drag.moved<8 then opts.onTap() end
+                end
+            end)
+        end
+    end)
+    UIS.InputChanged:Connect(function(i)
+        if not drag.active then return end
+        local isMine=i==drag.input
+            or (i.UserInputType==Enum.UserInputType.MouseMovement and drag.input.UserInputType==Enum.UserInputType.MouseButton1)
+        if not isMine then return end
+        local d=Vector2.new(i.Position.X-drag.start.X,i.Position.Y-drag.start.Y)
+        drag.moved=math.max(drag.moved,d.Magnitude)
+        local vp,sz=gui.AbsoluteSize,target.AbsoluteSize
+        local minX,maxX,minY,maxY
+        if opts.full then
+            minX,maxX=6-startAbs.X,vp.X-sz.X-6-startAbs.X
+            minY,maxY=6-startAbs.Y,vp.Y-sz.Y-6-startAbs.Y
+        else
+            minX,maxX=140-startAbs.X-sz.X,vp.X-140-startAbs.X
+            minY,maxY=-startAbs.Y,vp.Y-56-startAbs.Y
+        end
+        goal=Vector2.new(math.clamp(d.X,minX,maxX),math.clamp(d.Y,minY,maxY))
+    end)
+    RunService.RenderStepped:Connect(function(dt)
+        if not startPos or (not drag.active and (cur-goal).Magnitude<0.05) then return end
+        cur=cur:Lerp(goal,1-math.exp(-dt*26))
+        target.Position=UDim2.new(startPos.X.Scale,startPos.X.Offset+cur.X,
+            startPos.Y.Scale,startPos.Y.Offset+cur.Y)
+    end)
+end
+
+----------------------------------------------------------------------
+-- WINDOW (Transparent background only here)
+----------------------------------------------------------------------
+local win=new("CanvasGroup",{
+    Name="Window",
+    AnchorPoint=Vector2.new(0.5,0.5),
+    Position=UDim2.new(0.5,0,0.5,0),
+    Size=UDim2.new(0,720,0,450),
+    BackgroundColor3=C.bg, BackgroundTransparency=0.25, BorderSizePixel=0, -- Transparency applied
+    Visible=false, GroupTransparency=1,
+},gui)
+corner(win,14)
+spin(accentGradient(stroke(win,WHITE,1.5)),50)
+local winScale=new("UIScale",{Scale=1},win)
+
+local top=new("Frame",{Size=UDim2.new(1,0,0,48),BackgroundColor3=C.panel,BorderSizePixel=0},win)
+local topLine=new("Frame",{
+    AnchorPoint=Vector2.new(0,1), Position=UDim2.new(0,0,1,0),
+    Size=UDim2.new(1,0,0,1), BackgroundColor3=WHITE, BorderSizePixel=0,
+},top)
+spin(accentGradient(topLine),120)
+
+local uiLogo=makeLogo(top,8,{Position=UDim2.new(0,12,0,9),Size=UDim2.new(0,30,0,30)})
+stroke(uiLogo,C.accent,1,0.3)
+local uiLogoShine=makeShine(uiLogo,12,60,3)
+task.spawn(function()
+    while uiLogo.Parent do
+        uiLogoShine.Position=UDim2.new(1.3,0,0.5,0)
+        tween(uiLogoShine,0.7,{Position=UDim2.new(-0.3,0,0.5,0)},Enum.EasingStyle.Sine,Enum.EasingDirection.InOut)
+        task.wait(3)
+    end
+end)
+
+local pill=new("Frame",{
+    AnchorPoint=Vector2.new(0,0.5), Position=UDim2.new(0,52,0.5,0),
+    Size=UDim2.new(0,88,0,20), BackgroundColor3=C.panel2, BorderSizePixel=0,
+},top)
+corner(pill,10); stroke(pill,C.line,1)
+label(pill,{Text="ARSENAL",Font=Enum.Font.GothamBold,TextSize=10,TextColor3=C.muted,
+    Size=UDim2.new(1,0,1,0)})
+
+local live=new("Frame",{
+    AnchorPoint=Vector2.new(0,0.5), Position=UDim2.new(0,148,0.5,0),
+    Size=UDim2.new(0,8,0,8), BackgroundColor3=C.green, BorderSizePixel=0,
+},top)
+corner(live,4)
+task.spawn(function()
+    while live.Parent do
+        tween(live,0.9,{BackgroundTransparency=0.7},Enum.EasingStyle.Sine)
+        task.wait(0.9)
+        tween(live,0.9,{BackgroundTransparency=0},Enum.EasingStyle.Sine)
+        task.wait(0.9)
+    end
+end)
+
+local title=label(top,{
+    Text="@XevrynXen", Font=Enum.Font.Michroma, TextSize=22,
+    AnchorPoint=Vector2.new(0.5,0.5), Position=UDim2.new(0.5,0,0.5,0),
+    Size=UDim2.new(0,170,1,0),
+})
+shineText(title,2.0)
+
+local closeBtn=new("TextButton",{
+    AnchorPoint=Vector2.new(1,0.5), Position=UDim2.new(1,-12,0.5,0),
+    Size=UDim2.new(0,28,0,28), BackgroundColor3=C.panel2,
+    Text="—", Font=Enum.Font.GothamBold, TextSize=14,
+    TextColor3=C.muted, AutoButtonColor=false, BorderSizePixel=0,
+},top)
+corner(closeBtn,8)
+closeBtn.MouseEnter:Connect(function()
+    tween(closeBtn,0.15,{BackgroundColor3=C.accent,TextColor3=C.text})
+end)
+closeBtn.MouseLeave:Connect(function()
+    tween(closeBtn,0.15,{BackgroundColor3=C.panel2,TextColor3=C.muted})
+end)
+
+local sidebar=new("Frame",{
+    Position=UDim2.new(0,0,0,48), Size=UDim2.new(0,150,1,-48),
+    BackgroundColor3=C.panel, BorderSizePixel=0,
+},win)
+new("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,4)},sidebar)
+new("UIPadding",{PaddingTop=UDim.new(0,10),PaddingLeft=UDim.new(0,10),PaddingRight=UDim.new(0,10)},sidebar)
+label(win,{
+    Text="RightShift  •  hide", TextSize=10, TextColor3=C.muted,
+    AnchorPoint=Vector2.new(0,1), Position=UDim2.new(0,0,1,-8),
+    Size=UDim2.new(0,150,0,14),
+})
+
+local content=new("Frame",{
+    Position=UDim2.new(0,158,0,56), Size=UDim2.new(1,-166,1,-64),
+    BackgroundTransparency=1,
+},win)
+
+local sweep=new("Frame",{
+    Position=UDim2.new(1,0,0,0), Size=UDim2.new(0,160,1,0),
+    BackgroundColor3=WHITE, BorderSizePixel=0, ZIndex=30, Visible=false,
+},win)
+new("UIGradient",{Transparency=NumberSequence.new({
+    NumberSequenceKeypoint.new(0,1),
+    NumberSequenceKeypoint.new(0.5,0.82),
+    NumberSequenceKeypoint.new(1,1),
+})},sweep)
+
+----------------------------------------------------------------------
+-- TABS
+----------------------------------------------------------------------
+local tabs,current={},nil
+local function selectTab(t,silent)
+    if current==t then return end
+    if not silent then sfx("select") end
+    if current then
+        current.page.Visible=false
+        current.shineId+=1
+        current.shine.Visible=false
+        tween(current.btn,0.25,{BackgroundTransparency=1,BackgroundColor3=C.hover})
+        tween(current.bar,0.2,{Size=UDim2.new(0,3,0,0)})
+        tween(current.txt,0.2,{TextColor3=C.muted})
+        tween(current.stroke,0.25,{Transparency=1})
+    end
+    current=t
+    tween(t.btn,0.3,{BackgroundTransparency=0.1,BackgroundColor3=C.accentDark})
+    tween(t.bar,0.4,{Size=UDim2.new(0,3,0,20)},Enum.EasingStyle.Back)
+    tween(t.txt,0.2,{TextColor3=WHITE})
+    tween(t.stroke,0.3,{Transparency=0.3})
+    t.page.Position=UDim2.new(0,0,0,18)
+    t.page.Visible=true
+    tween(t.page,0.5,{Position=UDim2.new(0,0,0,0)})
+    for i,card in ipairs(t.cards) do
+        card.GroupTransparency=1
+        task.delay((i-1)*0.07,function() tween(card,0.5,{GroupTransparency=0}) end)
+    end
+    t.shineId+=1
+    local id=t.shineId
+    t.shine.Visible=true
+    task.spawn(function()
+        while current==t and t.shineId==id do
+            t.shine.Position=UDim2.new(1.3,0,0.5,0)
+            tween(t.shine,0.9,{Position=UDim2.new(-0.3,0,0.5,0)},Enum.EasingStyle.Sine,Enum.EasingDirection.InOut)
+            task.wait(2.1)
+        end
+    end)
+end
+
+for i,tab in ipairs(CONFIG) do
+    local btn=new("TextButton",{
+        Size=UDim2.new(1,0,0,38), BackgroundColor3=C.hover,
+        BackgroundTransparency=1, AutoButtonColor=false, Text="",
+        ClipsDescendants=true, LayoutOrder=i,
+    },sidebar)
+    corner(btn,8)
+    local btnStroke=stroke(btn,C.accent,1.5,1)
+    local bar=new("Frame",{
+        AnchorPoint=Vector2.new(0,0.5), Position=UDim2.new(0,0,0.5,0),
+        Size=UDim2.new(0,3,0,0), BackgroundColor3=WHITE, BorderSizePixel=0,
+    },btn)
+    corner(bar,2)
+    label(btn,{Text=tab.icon,TextSize=16,Position=UDim2.new(0,12,0,0),Size=UDim2.new(0,22,1,0)})
+    local txt=label(btn,{
+        Text=tab.name, Font=Enum.Font.GothamBold, TextColor3=C.muted,
+        Position=UDim2.new(0,42,0,0), Size=UDim2.new(1,-46,1,0),
+        TextXAlignment=Enum.TextXAlignment.Left,
+    })
+    local shine=makeShine(btn,40,90,3); shine.Visible=false
+    local page=new("Frame",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,Visible=false},content)
+    local scroll=new("ScrollingFrame",{
+        Size=UDim2.new(1,0,1,0), BackgroundTransparency=1, BorderSizePixel=0,
+        ScrollBarThickness=3, ScrollBarImageColor3=C.accent,
+        CanvasSize=UDim2.new(), AutomaticCanvasSize=Enum.AutomaticSize.Y,
+    },page)
+    local cols={}
+    for _,side in ipairs({"left","right"}) do
+        local col=new("Frame",{
+            Position=side=="left" and UDim2.new(0,0,0,0) or UDim2.new(0.5,6,0,0),
+            Size=UDim2.new(0.5,-10,0,0),
+            AutomaticSize=Enum.AutomaticSize.Y, BackgroundTransparency=1,
+        },scroll)
+        new("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,10)},col)
+        cols[side]=col
+    end
+    local cards,gOrder={},0
+    for _,g in ipairs(tab.groups) do
+        gOrder+=1
+        local card=new("CanvasGroup",{
+            Size=UDim2.new(1,0,0,0),
+            AutomaticSize=Enum.AutomaticSize.Y,
+            BackgroundColor3=C.panel, BorderSizePixel=0,
+            LayoutOrder=gOrder,
+        },cols[g.side])
+        corner(card,10); stroke(card,C.line,1,0.3)
+        new("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,2)},card)
+        new("UIPadding",{
+            PaddingTop=UDim.new(0,10), PaddingBottom=UDim.new(0,8),
+            PaddingLeft=UDim.new(0,6), PaddingRight=UDim.new(0,6),
+        },card)
+        label(card,{
+            Text=string.upper(g.name), Font=Enum.Font.GothamBlack, TextSize=11,
+            TextColor3=C.accent, Position=UDim2.new(0,8,0,0),
+            Size=UDim2.new(1,0,0,20), TextXAlignment=Enum.TextXAlignment.Left,
+            LayoutOrder=0,
+        },card)
+        for n,ctrl in ipairs(g.controls) do
+            builders[ctrl.type](card,ctrl,n)
+        end
+        table.insert(cards,card)
+    end
+    local t={btn=btn,bar=bar,txt=txt,page=page,cards=cards,shine=shine,stroke=btnStroke,shineId=0}
+    tabs[i]=t
+    btn.Activated:Connect(function() selectTab(t) end)
+    btn.MouseEnter:Connect(function()
+        if current~=t then tween(btn,0.15,{BackgroundTransparency=0.6}); sfx("hover") end
+    end)
+    btn.MouseLeave:Connect(function()
+        if current~=t then tween(btn,0.15,{BackgroundTransparency=1}) end
+    end)
+end
+
+----------------------------------------------------------------------
+-- FAB
+----------------------------------------------------------------------
+local FAB=58
+local fab=new("TextButton",{
+    Name="LogoButton", AnchorPoint=Vector2.new(0.5,0.5),
+    Position=UDim2.new(0,48,0.5,0),
+    Size=UDim2.new(0,0,0,0), BackgroundTransparency=1, Text="",
+    AutoButtonColor=false, Visible=false, ZIndex=5,
+},gui)
+local fabGlow=new("Frame",{
+    AnchorPoint=Vector2.new(0.5,0.5), Position=UDim2.new(0.5,0,0.5,0),
+    Size=UDim2.new(1,18,1,18),
+    BackgroundColor3=C.accent, BackgroundTransparency=0.85, BorderSizePixel=0,
+},fab)
+corner(fabGlow,20)
+local fabBox=makeLogo(fab,15,{Size=UDim2.new(1,0,1,0)})
+spin(accentGradient(stroke(fabBox,WHITE,2)),90)
+local fabShine=makeShine(fabBox,14,90,3)
+task.spawn(function()
+    while fab.Parent do
+        tween(fabGlow,1.2,{BackgroundTransparency=0.93,Size=UDim2.new(1,26,1,26)},Enum.EasingStyle.Sine)
+        task.wait(1.2)
+        tween(fabGlow,1.2,{BackgroundTransparency=0.8,Size=UDim2.new(1,14,1,14)},Enum.EasingStyle.Sine)
+        task.wait(1.2)
+    end
+end)
+task.spawn(function()
+    while fab.Parent do
+        fabShine.Position=UDim2.new(1.3,0,0.5,0)
+        tween(fabShine,0.8,{Position=UDim2.new(-0.3,0,0.5,0)},Enum.EasingStyle.Sine,Enum.EasingDirection.InOut)
+        task.wait(3.2)
+    end
+end)
+
+----------------------------------------------------------------------
+-- OPEN / CLOSE
+----------------------------------------------------------------------
+local opened,ready=false,false
+local function showFab()
+    fab.Visible=true; fab.Size=UDim2.new(0,0,0,0)
+    tween(fab,0.5,{Size=UDim2.new(0,FAB,0,FAB)},Enum.EasingStyle.Back)
+end
+local function hideFab()
+    tween(fab,0.2,{Size=UDim2.new(0,0,0,0)},Enum.EasingStyle.Quint,Enum.EasingDirection.In)
+    task.delay(0.22,function() if opened then fab.Visible=false end end)
+end
+local function setOpen(v)
+    if opened==v then return end
+    opened=v
+    local base=baseScale()
+    if v then
+        sfx("open"); hideFab()
+        win.Visible=true; winScale.Scale=base*0.85; win.GroupTransparency=1
+        tween(winScale,0.55,{Scale=base},Enum.EasingStyle.Back)
+        tween(win,0.35,{GroupTransparency=0})
+        sweep.Visible=true; sweep.Position=UDim2.new(1,0,0,0)
+        tween(sweep,0.9,{Position=UDim2.new(-0.25,0,0,0)},Enum.EasingStyle.Sine,Enum.EasingDirection.InOut)
+        task.delay(0.95,function() sweep.Visible=false end)
+        if current then
+            for i,card in ipairs(current.cards) do
+                card.GroupTransparency=1
+                task.delay(0.15+(i-1)*0.06,function() tween(card,0.45,{GroupTransparency=0}) end)
+            end
+        end
+    else
+        sfx("close")
+        tween(winScale,0.28,{Scale=base*0.88},Enum.EasingStyle.Quint,Enum.EasingDirection.In)
+        tween(win,0.28,{GroupTransparency=1})
+        task.delay(0.3,function()
+            if not opened then win.Visible=false; showFab() end
+        end)
+    end
+end
+closeBtn.Activated:Connect(function() setOpen(false) end)
+UIS.InputBegan:Connect(function(i,gpe)
+    if not gpe and ready and i.KeyCode==Enum.KeyCode.RightShift then
+        setOpen(not opened)
+    end
+end)
+makeDraggable(top,win,{full=false})
+makeDraggable(fab,fab,{full=true,onTap=function() if ready then setOpen(true) end end})
+selectTab(tabs[1],true)
+
+----------------------------------------------------------------------
+-- INTRO
+----------------------------------------------------------------------
+task.spawn(function()
+    local rng=Random.new()
+    local blur=new("BlurEffect",{Size=0},Lighting)
+    tween(blur,0.8,{Size=10})
+    local holder=new("CanvasGroup",{
+        AnchorPoint=Vector2.new(0.5,0.5),
+        Position=UDim2.new(0.5,0,0.5,0),
+        Size=UDim2.new(0,800,0,480),
+        BackgroundTransparency=1,
+    },gui)
+    local introScale=baseScale()
+    local hs=new("UIScale",{Scale=introScale*0.88},holder)
+    tween(hs,1.0,{Scale=introScale})
+    sfx("whoosh")
+    for i=1,10 do
+        task.delay(i*0.04,function()
+            local y,len=rng:NextInteger(30,450),rng:NextInteger(140,340)
+            local ln=new("Frame",{
+                Position=UDim2.new(0,830,0,y), Size=UDim2.new(0,len,0,2),
+                BackgroundColor3=(i%2==0) and WHITE or C.accent,
+                BackgroundTransparency=0.35, BorderSizePixel=0,
+            },holder)
+            tween(ln,0.6,{Position=UDim2.new(0,-len-30,0,y),BackgroundTransparency=1},Enum.EasingStyle.Quad,Enum.EasingDirection.In)
+            task.delay(0.65,function() ln:Destroy() end)
+        end)
+    end
+    local logoBox=makeLogo(holder,28,{
+        AnchorPoint=Vector2.new(0.5,0.5), Position=UDim2.new(0.5,0,0,130),
+        Size=UDim2.new(0,10,0,10), Rotation=-200, GroupTransparency=1,
+    })
+    spin(accentGradient(stroke(logoBox,WHITE,3)),100)
+    task.wait(0.35)
+    tween(logoBox,0.75,{Size=UDim2.new(0,128,0,128),Rotation=0,GroupTransparency=0},Enum.EasingStyle.Back)
+    task.wait(0.55)
+    sfx("boom")
+    local vlab=label(holder,{
+        Text="@XevrynXen", Font=Enum.Font.Michroma, TextSize=58,
+        TextTransparency=1, AnchorPoint=Vector2.new(0,0.5),
+        Position=UDim2.new(0,-400,0,268), Size=UDim2.new(0,400,0,70),
+        TextXAlignment=Enum.TextXAlignment.Left,
+    })
+    local hubPill=new("Frame",{
+        AnchorPoint=Vector2.new(0,0.5), Position=UDim2.new(0,1200,0,268),
+        Size=UDim2.new(0,150,0,46), BackgroundColor3=C.accentDark,
+        BackgroundTransparency=1, BorderSizePixel=0,
+    },holder)
+    corner(hubPill,10)
+    local hubStroke=stroke(hubPill,C.accent,2,1)
+    label(hubPill,{Text="HUB",Font=Enum.Font.Michroma,TextSize=28,
+        TextColor3=WHITE,TextTransparency=1,Size=UDim2.new(1,0,1,0)})
+    task.wait(0.15)
+    local vw=vlab.TextBounds.X
+    local hw=120
+    local gap=16
+    local x0=400-(vw+gap+hw)/2
+    vlab.Size=UDim2.new(0,vw,0,70)
+    hubPill.Size=UDim2.new(0,hw,0,46)
+    sfx("whoosh")
+    tween(vlab,0.7,{Position=UDim2.new(0,x0,0,268),TextTransparency=0},Enum.EasingStyle.Back)
+    tween(hubPill,0.7,{Position=UDim2.new(0,x0+vw+gap,0,268),BackgroundTransparency=0.15},Enum.EasingStyle.Back)
+    tween(hubStroke,0.7,{Transparency=0.2})
+    shineText(vlab,1.8)
+    local line=new("Frame",{
+        AnchorPoint=Vector2.new(0.5,0.5), Position=UDim2.new(0.5,0,0,314),
+        Size=UDim2.new(0,0,0,2), BackgroundColor3=WHITE, BorderSizePixel=0,
+    },holder)
+    spin(accentGradient(line),120)
+    tween(line,0.7,{Size=UDim2.new(0,420,0,2)})
+    local sub=label(holder,{
+        Text="A R S E N A L   •   E D I T I O N",
+        Font=Enum.Font.GothamBold, TextSize=13, TextColor3=C.muted,
+        TextTransparency=1, AnchorPoint=Vector2.new(0.5,0.5),
+        Position=UDim2.new(0.5,0,0,336), Size=UDim2.new(0,420,0,20),
+    })
+    tween(sub,0.6,{TextTransparency=0.1})
+    local track=new("Frame",{
+        AnchorPoint=Vector2.new(0.5,0.5), Position=UDim2.new(0.5,0,0,376),
+        Size=UDim2.new(0,280,0,4), BackgroundColor3=C.line, BorderSizePixel=0,
+    },holder)
+    corner(track,2)
+    local fill=new("Frame",{Size=UDim2.new(0,0,1,0),BackgroundColor3=WHITE,BorderSizePixel=0},track)
+    corner(fill,2); accentGradient(fill)
+    local status=label(holder,{
+        Text="", TextSize=11, TextColor3=C.muted,
+        AnchorPoint=Vector2.new(0.5,0.5), Position=UDim2.new(0.5,0,0,398),
+        Size=UDim2.new(0,280,0,16),
+    })
+    local steps={"Loading modules...","Syncing interface...","Applying theme...","Ready"}
+    for i,s in ipairs(steps) do
+        status.Text=s
+        tween(fill,0.45,{Size=UDim2.new(i/#steps,0,1,0)},Enum.EasingStyle.Quad)
+        task.wait(0.45)
+    end
+    task.wait(0.15)
+    tween(hs,0.55,{Scale=introScale*1.3},Enum.EasingStyle.Quint,Enum.EasingDirection.In)
+    tween(holder,0.5,{GroupTransparency=1},Enum.EasingStyle.Quint,Enum.EasingDirection.In)
+    tween(blur,0.6,{Size=0})
+    task.wait(0.35)
+    ready=true
+    setOpen(true)
+    notify("@XevrynXen Arsenal loaded  •  RightShift", C.purple)
+    task.wait(0.4)
+    holder:Destroy(); blur:Destroy()
+end)
+
+----------------------------------------------------------------------
+-- ARSENAL BACKEND
+----------------------------------------------------------------------
+local State = {
+    -- aimbot
+    AimEnable=false, AimTeamCheck=true, AimPart="Head",
+    FOV=55, Sensitivity=0.03, DrawFOV=true,
+    -- silent
+    SilentAim=false,
+    -- esp
+    ESPEnable=false, ESPBox=true, ESPName=true, ESPTeamCheck=false,
+    -- character
+    InfJump=false, SpeedHack=false, SpeedValue=100,
+    Fly=false, FlySpeed=60,
+    -- weapon
+    RecoilMod=false, FireRateMod=false, AmmoMod=false,
+}
+
+local Holding = false
+local flyBV, flyBG
+
+----------------------------------------------------------------------
+-- FOV CIRCLE (Drawing)
+----------------------------------------------------------------------
+local FovCircle = nil
+pcall(function()
+    if Drawing then
+        FovCircle = Drawing.new("Circle")
+        FovCircle.Thickness = 1.5
+        FovCircle.NumSides = 64
+        FovCircle.Transparency = 1
+        FovCircle.Filled = false
+        FovCircle.Color = Color3.fromRGB(255,255,255)
+        FovCircle.Visible = false
+    end
+end)
+
+RunService.RenderStepped:Connect(function()
+    if not FovCircle then return end
+    if State.DrawFOV and State.AimEnable then
+        FovCircle.Visible = true
+        FovCircle.Position = Vector2.new(UIS:GetMouseLocation().X, UIS:GetMouseLocation().Y)
+        FovCircle.Radius = State.FOV
+    else
+        FovCircle.Visible = false
+    end
+end)
+
+----------------------------------------------------------------------
+-- AIMBOT
+----------------------------------------------------------------------
+local function getAimPart(char)
+    if not char then return nil end
+    return char:FindFirstChild(State.AimPart)
+        or char:FindFirstChild("Head")
+        or char:FindFirstChild("HumanoidRootPart")
+        or char:FindFirstChild("UpperTorso")
+        or char:FindFirstChild("Torso")
+end
+
+local function getClosestPlayer()
+    local target = nil
+    local mousePos = UIS:GetMouseLocation()
+    local maxDist = State.FOV
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LP and plr.Character then
+            local char = plr.Character
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            if hum and hum.Health > 0 and hrp then
+                local teamOk = not State.AimTeamCheck or (plr.Team ~= LP.Team)
+                if teamOk then
+                    local screen, onScreen = Camera:WorldToScreenPoint(hrp.Position)
+                    if onScreen then
+                        local dist = (Vector2.new(mousePos.X, mousePos.Y) - Vector2.new(screen.X, screen.Y)).Magnitude
+                        if dist < maxDist then
+                            target = plr
+                            maxDist = dist
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return target
+end
+
+UIS.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton2 then Holding = true end
+end)
+UIS.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton2 then Holding = false end
+end)
+
+RunService.RenderStepped:Connect(function()
+    if not State.AimEnable or not Holding then return end
+    local target = getClosestPlayer()
+    if not target or not target.Character then return end
+    local part = getAimPart(target.Character)
+    if not part then return end
+    local info = TweenInfo.new(State.Sensitivity, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
+    TweenService:Create(Camera, info, {CFrame = CFrame.new(Camera.CFrame.Position, part.Position)}):Play()
+end)
+
+----------------------------------------------------------------------
+-- SILENT AIM (hitbox enlargement)
+----------------------------------------------------------------------
+local function applySilentHitboxes()
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LP and plr.Character then
+            local char = plr.Character
+            for _, name in ipairs({"RightUpperLeg","LeftUpperLeg","Head","HeadHB","HumanoidRootPart"}) do
+                local part = char:FindFirstChild(name)
+                if part and part:IsA("BasePart") then
+                    part.CanCollide = false
+                    part.Transparency = 1
+                    part.Size = Vector3.new(13,13,13)
+                end
+            end
+        end
+    end
+end
+
+task.spawn(function()
+    while task.wait(1) do
+        if State.SilentAim then applySilentHitboxes() end
+    end
+end)
+
+----------------------------------------------------------------------
+-- ESP
+----------------------------------------------------------------------
+local function buildESPFor(player)
+    if player == LP or not player.Character then return end
+    local char = player.Character
+    local head = char:FindFirstChild("Head")
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not head or not hrp then return end
+
+    if not head:FindFirstChild("KB_name_esp") and State.ESPName then
+        local bb = Instance.new("BillboardGui")
+        bb.Name = "KB_name_esp"
+        bb.Adornee = head
+        bb.AlwaysOnTop = true
+        bb.Size = UDim2.new(0,200,0,30)
+        bb.StudsOffset = Vector3.new(0,2.5,0)
+        bb.Parent = head
+        local lbl = Instance.new("TextLabel")
+        lbl.Size = UDim2.new(1,0,1,0)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = player.Name
+        lbl.TextColor3 = Color3.fromRGB(255,255,255)
+        lbl.TextStrokeTransparency = 0
+        lbl.Font = Enum.Font.GothamBold
+        lbl.TextScaled = true
+        lbl.Parent = bb
+    end
+
+    if not hrp:FindFirstChild("KB_box_esp") and State.ESPBox then
+        local bb = Instance.new("BillboardGui")
+        bb.Name = "KB_box_esp"
+        bb.Adornee = hrp
+        bb.AlwaysOnTop = true
+        bb.Size = UDim2.new(4,0,6,0)
+        bb.Parent = hrp
+        local box = Instance.new("ImageLabel")
+        box.Size = UDim2.new(1,0,1,0)
+        box.BackgroundTransparency = 1
+        box.Image = "rbxassetid://16946608585"
+        box.ImageTransparency = 0.3
+        box.Parent = bb
+    end
+end
+
+local function clearESPFor(player)
+    if not player or not player.Character then return end
+    local head = player.Character:FindFirstChild("Head")
+    local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+    if head and head:FindFirstChild("KB_name_esp") then head.KB_name_esp:Destroy() end
+    if hrp and hrp:FindFirstChild("KB_box_esp") then hrp.KB_box_esp:Destroy() end
+end
+
+local function updateESPStyle(player)
+    if not player or not player.Character then return end
+    local head = player.Character:FindFirstChild("Head")
+    local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+    if head then
+        local bb = head:FindFirstChild("KB_name_esp")
+        if bb then bb.Enabled = State.ESPName end
+    end
+    if hrp then
+        local bb = hrp:FindFirstChild("KB_box_esp")
+        if bb then bb.Enabled = State.ESPBox end
+    end
+end
+
+local function refreshESP()
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LP then
+            if State.ESPEnable then
+                local teamSkip = State.ESPTeamCheck and plr.Team == LP.Team
+                if not teamSkip then
+                    buildESPFor(plr)
+                    updateESPStyle(plr)
+                else
+                    clearESPFor(plr)
+                end
+            else
+                clearESPFor(plr)
+            end
+        end
+    end
+end
+
+task.spawn(function()
+    while task.wait(0.4) do
+        pcall(refreshESP)
+    end
+end)
+
+Players.PlayerAdded:Connect(function(p)
+    p.CharacterAdded:Connect(function()
+        task.wait(0.5)
+        if State.ESPEnable then buildESPFor(p) end
+    end)
+end)
+
+----------------------------------------------------------------------
+-- CHARACTER
+----------------------------------------------------------------------
+UIS.JumpRequest:Connect(function()
+    if State.InfJump and LP.Character then
+        local hum = LP.Character:FindFirstChildOfClass("Humanoid")
+        if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
+    end
+end)
+
+task.spawn(function()
+    while task.wait(0.25) do
+        local char = LP.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            if State.SpeedHack then
+                if hum.WalkSpeed ~= State.SpeedValue then hum.WalkSpeed = State.SpeedValue end
+            end
+        end
+    end
+end)
+
+local function startFly()
+    local char = LP.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    flyBV = Instance.new("BodyVelocity")
+    flyBV.MaxForce = Vector3.new(1e5,1e5,1e5)
+    flyBV.Velocity = Vector3.zero
+    flyBV.Parent = hrp
+    flyBG = Instance.new("BodyGyro")
+    flyBG.MaxTorque = Vector3.new(1e5,1e5,1e5)
+    flyBG.P = 1000
+    flyBG.Parent = hrp
+end
+local function stopFly()
+    if flyBV then flyBV:Destroy() flyBV=nil end
+    if flyBG then flyBG:Destroy() flyBG=nil end
+end
+
+RunService.RenderStepped:Connect(function()
+    if not State.Fly or not flyBV then return end
+    local char = LP.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    local cam = Workspace.CurrentCamera
+    local move = Vector3.zero
+    if UIS:IsKeyDown(Enum.KeyCode.W) then move += cam.CFrame.LookVector end
+    if UIS:IsKeyDown(Enum.KeyCode.S) then move -= cam.CFrame.LookVector end
+    if UIS:IsKeyDown(Enum.KeyCode.A) then move -= cam.CFrame.RightVector end
+    if UIS:IsKeyDown(Enum.KeyCode.D) then move += cam.CFrame.RightVector end
+    if UIS:IsKeyDown(Enum.KeyCode.Space) then move += Vector3.new(0,1,0) end
+    if UIS:IsKeyDown(Enum.KeyCode.LeftControl) then move -= Vector3.new(0,1,0) end
+    flyBV.Velocity = move * State.FlySpeed
+end)
+
+----------------------------------------------------------------------
+-- WEAPON MODS
+----------------------------------------------------------------------
+task.spawn(function()
+    while task.wait(5) do
+        if State.RecoilMod then
+            local weapons = ReplicatedStorage:FindFirstChild("Weapons")
+            if weapons then
+                for _, v in ipairs(weapons:GetDescendants()) do
+                    if v.Name == "RecoilControl" and v:IsA("ValueBase") then
+                        pcall(function() v.Value = 0 end)
+                    elseif v.Name == "MaxSpread" and v:IsA("ValueBase") then
+                        pcall(function() v.Value = 0 end)
+                    end
+                end
+            end
+        end
+    end
+end)
+
+task.spawn(function()
+    while task.wait(5) do
+        if State.FireRateMod then
+            local weapons = ReplicatedStorage:FindFirstChild("Weapons")
+            if weapons then
+                for _, v in ipairs(weapons:GetDescendants()) do
+                    if v.Name == "Auto" and v:IsA("BoolValue") then
+                        pcall(function() v.Value = true end)
+                    elseif v.Name == "FireRate" and v:IsA("ValueBase") then
+                        pcall(function() v.Value = 0.02 end)
+                    end
+                end
+            end
+        end
+    end
+end)
+
+task.spawn(function()
+    while task.wait(0.1) do
+        if State.AmmoMod then
+            local pg = LP:FindFirstChild("PlayerGui")
+            local gui = pg and pg:FindFirstChild("GUI")
+            local client = gui and gui:FindFirstChild("Client")
+            local vars = client and client:FindFirstChild("Variables")
+            if vars then
+                local a1 = vars:FindFirstChild("ammocount")
+                local a2 = vars:FindFirstChild("ammocount2")
+                if a1 then pcall(function() a1.Value = 999 end) end
+                if a2 then pcall(function() a2.Value = 999 end) end
+            end
+        end
+    end
+end)
+
+----------------------------------------------------------------------
+-- FLAG BRIDGE
+----------------------------------------------------------------------
+local HANDLERS = {
+    -- Aimbot
+    AimEnable = function(v) State.AimEnable = v; notify("Aimbot  "..(v and "ON" or "OFF"), v and C.green or C.accent) end,
+    AimTeamCheck = function(v) State.AimTeamCheck = v end,
+    AimPart = function(v) State.AimPart = v end,
+    FOV = function(v) State.FOV = v end,
+    Sensitivity = function(v) State.Sensitivity = v/100 end,
+    DrawFOV = function(v) State.DrawFOV = v end,
+    SilentAim = function(v) State.SilentAim = v; notify("Silent Aim  "..(v and "ON" or "OFF"), v and C.green or C.accent) end,
+
+    -- ESP
+    ESPEnable = function(v) State.ESPEnable = v; notify("Player ESP  "..(v and "ON" or "OFF"), v and C.green or C.accent) end,
+    ESPBox = function(v) State.ESPBox = v end,
+    ESPName = function(v) State.ESPName = v end,
+    ESPTeamCheck = function(v) State.ESPTeamCheck = v end,
+
+    -- Character
+    InfJump = function(v) State.InfJump = v; notify("Infinite Jump  "..(v and "ON" or "OFF"), v and C.green or C.accent) end,
+    SpeedHack = function(v) State.SpeedHack = v; notify("Speed Hack  "..(v and "ON" or "OFF"), v and C.green or C.accent) end,
+    SpeedValue = function(v) State.SpeedValue = v end,
+    Fly = function(v)
+        State.Fly = v
+        if v then startFly() else stopFly() end
+        notify("Fly  "..(v and "ON" or "OFF"), v and C.green or C.accent)
+    end,
+    FlySpeed = function(v) State.FlySpeed = v end,
+
+    -- Weapon
+    RecoilMod = function(v) State.RecoilMod = v; notify("Recoil Mod  "..(v and "ON" or "OFF"), v and C.green or C.accent) end,
+    FireRateMod = function(v) State.FireRateMod = v; notify("FireRate Mod  "..(v and "ON" or "OFF"), v and C.green or C.accent) end,
+    AmmoMod = function(v) State.AmmoMod = v; notify("Ammo Mod  "..(v and "ON" or "OFF"), v and C.green or C.accent) end,
+}
+
+Changed.Event:Connect(function(id, value)
+    local h = HANDLERS[id]
+    if h then pcall(h, value) end
+end)
+
+task.spawn(function()
+    task.wait(1)
+    State.Sensitivity = (Flags.Sensitivity or 3) / 100
+    notify("@XevrynXen Arsenal ready", C.purple)
+end)
+
+print("[@XevrynXen Arsenal] loaded.")
